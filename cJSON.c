@@ -367,28 +367,36 @@ static cJSON *cJSON_New_Item(const internal_hooks * const hooks)
     return node;
 }
 
-/* Delete a cJSON structure. */
-CJSON_PUBLIC(void) cJSON_Delete(cJSON *item)
+static void delete_json(cJSON *item, const internal_hooks * const hooks)
 {
     cJSON *next = NULL;
     while (item != NULL)
     {
         next = item->next;
+        /* delete children */
         if (!(item->type & cJSON_IsReference) && (item->child != NULL))
         {
             cJSON_Delete(item->child);
         }
+        /* delete valuestring */
         if (!(item->type & cJSON_IsReference) && (item->valuestring != NULL))
         {
-            global_hooks.deallocate(item->valuestring);
+            hooks->deallocate(item->valuestring);
         }
+        /* delete name */
         if (!(item->type & cJSON_StringIsConst) && (item->string != NULL))
         {
-            global_hooks.deallocate(item->string);
+            hooks->deallocate(item->string);
         }
-        global_hooks.deallocate(item);
+        hooks->deallocate(item);
         item = next;
     }
+}
+
+/* Delete a cJSON structure. */
+CJSON_PUBLIC(void) cJSON_Delete(cJSON *item)
+{
+    delete_json(item, &global_hooks);
 }
 
 /* get the decimal point character of the current locale */
