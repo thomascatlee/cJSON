@@ -1149,50 +1149,51 @@ static parse_buffer *skip_utf8_bom(parse_buffer * const buffer)
     return buffer;
 }
 
-/* Parse an object - create a new root, and populate. */
-CJSON_PUBLIC(cJSON *) cJSON_ParseWithOpts(const char *value, const char **return_parse_end, cJSON_bool require_null_terminated)
+CJSON_PUBLIC(cJSON *) cJSON_ParseWithConfiguration(const char * const value, const cJSON_Configuration configuration, size_t *end_position)
 {
+    const internal_configuration *internal_config = (internal_configuration*)configuration;
     parse_buffer buffer = { 0, 0, 0, 0, { 0, 0, 0 } };
     cJSON *item = NULL;
-
-    /* reset error position */
-    global_error.json = NULL;
-    global_error.position = 0;
 
     if (value == NULL)
     {
         goto fail;
     }
 
+    if (internal_config == NULL)
+    {
+        internal_config = &default_configuration;
+    }
+
+    /* parsebuffer setup */
     buffer.content = (const unsigned char*)value;
     buffer.length = strlen((const char*)value) + sizeof("");
     buffer.offset = 0;
-    buffer.hooks = global_hooks;
+    buffer.hooks = internal_config->hooks;
 
-    item = cJSON_New_Item(&global_hooks);
-    if (item == NULL) /* memory fail */
+    item = cJSON_New_Item(&buffer.hooks);
+    if (item == NULL)
     {
         goto fail;
     }
 
     if (!parse_value(item, buffer_skip_whitespace(skip_utf8_bom(&buffer))))
     {
-        /* parse failure. ep is set. */
         goto fail;
     }
 
-    /* if we require null-terminated JSON without appended garbage, skip and then check for a null terminator */
-    if (require_null_terminated)
+    if (!internal_config->allow_data_after_json)
     {
+        /* check if there is data after the JSON */
         buffer_skip_whitespace(&buffer);
-        if ((buffer.offset >= buffer.length) || buffer_at_offset(&buffer)[0] != '\0')
+        if (can_access_at_index(&buffer, 0) && buffer_at_offset(&buffer)[0] != '\0')
         {
             goto fail;
         }
     }
-    if (return_parse_end)
+    if (end_position != NULL)
     {
-        *return_parse_end = (const char*)buffer_at_offset(&buffer);
+        *end_position = buffer.offset;
     }
 
     return item;
@@ -1200,35 +1201,40 @@ CJSON_PUBLIC(cJSON *) cJSON_ParseWithOpts(const char *value, const char **return
 fail:
     if (item != NULL)
     {
-        cJSON_Delete(item);
-    }
-
-    if (value != NULL)
-    {
-        error local_error;
-        local_error.json = (const unsigned char*)value;
-        local_error.position = 0;
-
-        if (buffer.offset < buffer.length)
-        {
-            local_error.position = buffer.offset;
-        }
-        else if (buffer.length > 0)
-        {
-            local_error.position = buffer.length - 1;
-        }
-
-        if (return_parse_end != NULL)
-        {
-            *return_parse_end = (const char*)local_error.json + local_error.position;
-        }
-        else
-        {
-            global_error = local_error;
-        }
+        delete_json(item, &buffer.hooks);
     }
 
     return NULL;
+}
+
+/* Parse an object - create a new root, and populate. */
+CJSON_PUBLIC(cJSON *) cJSON_ParseWithOpts(const char *value, const char **return_parse_end, cJSON_bool require_null_terminated)
+{
+    internal_configuration configuration = default_configuration;
+    size_t error_position = 0;
+    cJSON *item = NULL;
+
+    if (value == NULL)
+    {
+        return NULL;
+    }
+
+    configuration.hooks = global_hooks;
+    configuration.allow_data_after_json = !require_null_terminated;
+
+    item = cJSON_ParseWithConfiguration(value, (cJSON_Configuration)&configuration, &error_position);
+    if ((item == NULL) && (return_parse_end == NULL))
+    {
+        global_error.json = (const unsigned char*)value;
+        global_error.position = error_position;
+    }
+
+    if (return_parse_end != NULL)
+    {
+        *return_parse_end = value + error_position;
+    }
+
+    return item;
 }
 
 /* Default options for cJSON_Parse */
