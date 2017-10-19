@@ -49,6 +49,9 @@ extern "C"
 #define cJSON_IsReference 256
 #define cJSON_StringIsConst 512
 
+#define cJSON_INTMAX LLONG_MAX
+#define cJSON_INTMIN LLONG_MIN
+
 /* The cJSON structure: */
 typedef struct cJSON
 {
@@ -64,7 +67,7 @@ typedef struct cJSON
     /* The item's string, if type==cJSON_String  and type == cJSON_Raw */
     char *valuestring;
     /* writing to valueint is DEPRECATED, use cJSON_SetNumberValue instead */
-    int valueint;
+    long long valueint;		//改为int64类型，以支持uint32的数值
     /* The item's number, if type==cJSON_Number */
     double valuedouble;
 
